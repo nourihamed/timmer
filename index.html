@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="تایمر">
+<meta name="theme-color" content="#0f1220">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>تایمر پشت‌سرهم</title>
+<style>
+:root{--bg:#0f1220;--card:#1a1f35;--text:#eef0f8;--muted:#8b92b0;--accent:#6c8cff;--danger:#ff5d73;--warn:#ffb547}
+@media (prefers-color-scheme: light){:root{--bg:#f3f5fb;--card:#ffffff;--text:#1b1f33;--muted:#6b7290;--accent:#3d63f0}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,Tahoma,sans-serif}
+body{padding:env(safe-area-inset-top,0px) 16px env(safe-area-inset-bottom,0px)}
+.wrap{max-width:480px;margin:0 auto;padding:16px 0 40px}
+h1{font-size:20px;margin:8px 0 16px;text-align:center}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:8px}
+input{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(128,128,128,.25);background:transparent;color:var(--text);font-size:16px;font-family:inherit}
+input.num{text-align:center;direction:ltr}
+.nm{flex:2}.mm,.ss{flex:1}
+button{border:0;border-radius:12px;padding:13px;font-size:16px;font-family:inherit;color:#fff;background:var(--accent);font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button.sec{background:transparent;color:var(--text);border:1px solid rgba(128,128,128,.3)}
+button.danger{background:var(--danger)}
+button.warn{background:var(--warn);color:#222}
+button:disabled{opacity:.4}
+.add{width:100%;margin-top:10px}
+.item{display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:12px;background:rgba(128,128,128,.08);margin-bottom:8px;transition:.2s}
+.item.cur{outline:2px solid var(--accent)}
+.item.done{opacity:.45}
+.meta{font-size:13px;color:var(--muted);direction:ltr;text-align:right}
+.x{background:none;color:var(--danger);padding:4px 10px;font-size:22px;line-height:1}
+.big{font-size:64px;font-weight:700;text-align:center;direction:ltr;font-variant-numeric:tabular-nums;margin:8px 0}
+.label{text-align:center;color:var(--muted);font-size:15px;margin:6px 0}
+.total{text-align:center;margin-top:10px;font-size:15px}
+.total b{direction:ltr;display:inline-block;font-variant-numeric:tabular-nums}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.bar{height:6px;border-radius:4px;background:rgba(128,128,128,.2);overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s linear}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>تایمر پشت‌سرهم</h1>
+
+  <div class="card hidden" id="runCard">
+    <div class="label" id="curName">—</div>
+    <div class="big" id="clock">00:00</div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="label" id="stepInfo"></div>
+    <div class="total">باقی‌مانده‌ی کل: <b id="remainTotal">00:00</b></div>
+    <button class="warn hidden" id="silenceBtn" style="width:100%;margin-top:12px">خاموش کردن آلارم</button>
+    <div class="controls">
+      <button class="sec" id="pauseBtn">توقف</button>
+      <button class="danger" id="stopBtn">پایان</button>
+    </div>
+  </div>
+
+  <div class="card" id="setup">
+    <div class="row"><input id="name" class="nm" placeholder="نام (مثلاً: گرم کردن)"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="mm" class="num mm" type="text" inputmode="numeric" placeholder="دقیقه" autocomplete="off">
+      <input id="ss" class="num ss" type="text" inputmode="numeric" placeholder="ثانیه" autocomplete="off">
+    </div>
+    <div class="label" id="msg" style="color:var(--danger);min-height:18px;margin:6px 0 0"></div>
+    <button class="add" id="addBtn">+ افزودن</button>
+  </div>
+
+  <div class="card">
+    <div id="list"></div>
+    <div class="label" id="empty">هنوز موردی اضافه نشده</div>
+    <div class="total">زمان کل: <b id="grandTotal">00:00</b></div>
+    <div class="controls">
+      <button id="startBtn">شروع</button>
+      <button class="sec" id="resetBtn">پاک‌کردن همه</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const p2 = n => String(n).padStart(2, '0');
+function fmt(ms){
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return h ? `${h}:${p2(m)}:${p2(x)}` : `${p2(m)}:${p2(x)}`;
+}
+
+let items = [];
+try { items = JSON.parse(localStorage.getItem('seqTimerItems')) || []; } catch (e) { items = []; }
+
+const st = { running:false, paused:false, idx:0, endAt:0, pausedLeft:0, dur:0 };
+let ctx = null, alarmId = null;
+
+/* ---------- sound (iOS needs a user gesture to unlock audio) ---------- */
+function unlock(){
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) ctx = new AC();
+  }
+  if (ctx && ctx.state !== 'running') ctx.resume();
+}
+function beep(freq = 880, dur = 0.25, delay = 0){
+  if (!ctx) return;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  const t = ctx.currentTime + delay;
+  o.frequency.value = freq;
+  o.connect(g); g.connect(ctx.destination);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+const ringOnce = () => { beep(988, 0.35, 0); beep(1319, 0.35, 0.45); beep(988, 0.35, 0.9); };
+
+// آلارم تکرارشونده؛ هم بین مراحل و هم در پایان استفاده می‌شود
+function startRing(){
+  if (alarmId) return;
+  ringOnce();
+  alarmId = setInterval(ringOnce, 2200);
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400]);
+  $('silenceBtn').classList.remove('hidden');
+}
+function stopRing(){
+  clearInterval(alarmId);
+  alarmId = null;
+  $('silenceBtn').classList.add('hidden');
+}
+
+/* ---------- storage ---------- */
+function save(){
+  try { localStorage.setItem('seqTimerItems', JSON.stringify(items)); } catch (e) {}
+}
+
+/* ---------- list ---------- */
+function renderList(){
+  const L = $('list');
+  L.innerHTML = '';
+  items.forEach((it, i) => {
+    const div = document.createElement('div');
+    div.className = 'item' + (st.running && i === st.idx ? ' cur' : '') + (st.running && i < st.idx ? ' done' : '');
+    const info = document.createElement('div');
+    const title = document.createElement('div');
+    title.textContent = (i + 1) + '. ' + it.name;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = fmt(it.secs * 1000);
+    info.append(title, meta);
+    div.appendChild(info);
+    if (!st.running) {
+      const x = document.createElement('button');
+      x.className = 'x';
+      x.textContent = '×';
+      x.onclick = () => { items.splice(i, 1); save(); renderList(); };
+      div.appendChild(x);
+    }
+    L.appendChild(div);
+  });
+  $('empty').classList.toggle('hidden', items.length > 0);
+  $('grandTotal').textContent = fmt(items.reduce((a, b) => a + b.secs, 0) * 1000);
+  $('startBtn').disabled = items.length === 0 || st.running;
+}
+
+function toLatin(str){
+  return String(str || '')
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+    .replace(/[^0-9]/g, '');
+}
+
+function addItem(){
+  const msg = $('msg');
+  const name = $('name').value.trim() || ('مرحله ' + (items.length + 1));
+  const m = parseInt(toLatin($('mm').value)) || 0;
+  const s = Math.min(59, parseInt(toLatin($('ss').value)) || 0);
+  const total = m * 60 + s;
+  if (total <= 0) { msg.textContent = 'لطفاً دقیقه یا ثانیه را وارد کنید'; return; }
+  items.push({ name, secs: total });
+  $('name').value = ''; $('mm').value = ''; $('ss').value = '';
+  msg.textContent = '';
+  save(); renderList();
+}
+
+/* ---------- run engine ---------- */
+function remainingAfter(i){
+  let t = 0;
+  for (let k = i + 1; k < items.length; k++) t += items[k].secs * 1000;
+  return t;
+}
+
+function begin(i, startAt){
+  st.idx = i;
+  st.dur = items[i].secs * 1000;
+  st.endAt = startAt + st.dur;
+}
+
+function update(left){
+  $('clock').textContent = fmt(left);
+  $('curName').textContent = items[st.idx].name;
+  $('stepInfo').textContent = `مرحله ${st.idx + 1} از ${items.length}`;
+  $('prog').style.width = Math.min(100, (1 - left / st.dur) * 100) + '%';
+  $('remainTotal').textContent = fmt(left + remainingAfter(st.idx));
+}
+
+function showRun(on){
+  $('runCard').classList.toggle('hidden', !on);
+  $('setup').classList.toggle('hidden', on);
+}
+
+function start(){
+  if (!items.length) return;
+  unlock();
+  st.running = true;
+  st.paused = false;
+  $('pauseBtn').textContent = 'توقف';
+  stopRing();
+  showRun(true);
+  begin(0, Date.now());
+  renderList();
+  tick();
+}
+
+function togglePause(){
+  if (!st.running) return;
+  unlock();
+  if (!st.paused) {
+    st.pausedLeft = st.endAt - Date.now();
+    st.paused = true;
+    $('pauseBtn').textContent = 'ادامه';
+  } else {
+    st.endAt = Date.now() + st.pausedLeft;
+    st.paused = false;
+    $('pauseBtn').textContent = 'توقف';
+  }
+}
+
+function finish(){
+  st.running = false;
+  st.paused = false;
+  $('curName').textContent = 'همه‌ی مراحل تمام شد ✅';
+  $('clock').textContent = '00:00';
+  $('prog').style.width = '100%';
+  $('stepInfo').textContent = '';
+  $('remainTotal').textContent = '00:00';
+  renderList();
+  startRing();
+}
+
+function stopAll(){
+  st.running = false;
+  st.paused = false;
+  stopRing();
+  showRun(false);
+  renderList();
+}
+
+function tick(){
+  if (!st.running) return;
+  if (st.paused) { update(st.pausedLeft); return; }
+  const now = Date.now();
+  let moved = false;
+  while (now >= st.endAt) {
+    if (st.idx + 1 >= items.length) { finish(); return; }
+    begin(st.idx + 1, st.endAt);
+    moved = true;
+  }
+  if (moved) {
+    // پایان هر مرحله‌ی میانی: آلارم تا خاموش کردن دستی ادامه دارد و مرحله‌ی بعد بی‌وقفه شروع می‌شود
+    startRing();
+    renderList();
+  }
+  update(st.endAt - now);
+}
+
+/* ---------- events ---------- */
+$('addBtn').addEventListener('click', addItem);
+['name', 'mm', 'ss'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') addItem(); }));
+$('startBtn').onclick = start;
+$('pauseBtn').onclick = togglePause;
+$('stopBtn').onclick = stopAll;
+$('silenceBtn').onclick = () => { unlock(); stopRing(); };
+$('resetBtn').onclick = () => {
+  if (st.running) return;
+  if (confirm('همه‌ی موارد پاک شود؟')) { items = []; save(); renderList(); }
+};
+setInterval(tick, 200);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+renderList();
+
+/* ---------- offline support ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
